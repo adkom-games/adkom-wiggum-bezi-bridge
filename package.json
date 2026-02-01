@@ -1,0 +1,18 @@
+{
+  "name": "com.adkom-games.bezi-bridge",
+  "version": "1.0.0",
+  "displayName": "Bezi Python Bridge",
+  "description": "Automated bridge for the Bezi AI desktop app using the Ralph Wiggum loop.",
+  "unity": "2021.3",
+  "author": {
+    "name": "ADKOM Games",
+    "url": "https://github.com/adkom-games"
+  },
+  "keywords": [
+    "ai",
+    "automation",
+    "bezi",
+    "workflow"
+  ],
+  "dependencies": {}
+}
