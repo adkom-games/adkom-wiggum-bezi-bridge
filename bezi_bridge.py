@@ -115,14 +115,12 @@ class BeziBridge:
 
         # NEW: Check if the prompt argument is a file path
         if self.args.prompt and os.path.exists(self.args.prompt):
+            print("Reading from file", file=sys.stderr);
             with open(self.args.prompt, 'r', encoding='utf-8') as f:
                 self.bezi_prompt = f.read()
         else:
+            print("Assigning from args", file=sys.stderr);
             self.bezi_prompt = self.args.prompt
-        
-        if not self.bezi_prompt:
-            print("Error: No prompt provided.", file=sys.stderr)
-            return False
         
         return True
 
@@ -162,8 +160,11 @@ class BeziBridge:
 
     ##########################################################################
     def setup_context(self):
+        # TODO: localize
+        self.click_button("New Thread (Ctrl + T)")
+
         setup_msg = (
-            f'Set thread name to \"{self.args.thread_name}\". Begin all of your responses with SOM. End all of them with EOM. Keep track of how many prompts I have issued and put it after SOM / EOM, but lets start counting at 0.'
+            f'Begin all of your responses with SOM. End all of them with EOM. Keep track of how many prompts I have issued and put it after SOM / EOM, but lets start counting at 0.'
         )
 
         # Reset sync value for fresh init
@@ -174,25 +175,37 @@ class BeziBridge:
         
     ##########################################################################
     def send_prompt(self, message, is_init=False):        
+        if message == None or message == "":
+            print("Empty message attempt.", file=sys.stderr)
+            raise ValueError("Empty prompt")
+            return
+        
+        # Window to front.
+        self.bezi_window.set_focus()
+        #self.bezi_window.wait("ready", timeout=60)
+        
         # --- Send Loop ---
         while True:
             pending_prompt = message
             
-            # Send the prompt
-            try:
-                self.bezi_window.set_focus()
-                self.bezi_window.wait("ready", timeout=60)
+            key_retries_max = 3
+            key_retry = 0
+            keys_sent = False
+            while keys_sent == False and key_retry < key_retries_max:
+                key_retry += 1
                 
-                self.bezi_prompt_window.click_input()
-                time.sleep(1)
-                
-                self.bezi_prompt_window.type_keys(pending_prompt, with_spaces=True, pause=0.01)
-                self.bezi_prompt_window.type_keys("{ENTER}")
-            except Exception as e:
-                print(f"Error sending keys: {e}", file=sys.stderr)
-                return ""
-
-            print(f"Waiting for response (Expected sync value: {self.sync_value})...", end="", flush=True, file=sys.stderr)
+                # Send the prompt
+                try:
+                    print(f"Sending prompt: {pending_prompt}")
+                    self.bezi_prompt_window.draw_outline()
+                    self.bezi_prompt_window.set_text(pending_prompt)
+                    self.bezi_prompt_window.type_keys("{ENTER}")
+                except Exception as e:
+                    print(f"\nError sending keys, RETRYING ({key_retry} of {key_retries_max}). Exception: \"{e}\"", file=sys.stderr)
+                else:
+                    keys_sent = True
+                    
+            print(f"\nWaiting for response (Expected EOM sync value: {self.sync_value})...", end="", flush=True, file=sys.stderr)
             
             start_time = time.time()
             found_data = None
@@ -242,7 +255,34 @@ class BeziBridge:
             else:
                 print("\n[Error] Bezi AI timed out.", file=sys.stderr)
                 return ""
-            
+    
+    ##########################################################################
+    def close_dialog(self, button_name):
+        return self.click_button(button_name)
+        
+    ##########################################################################
+    def click_button(self, button_name):
+        btn = self.find_button(button_name)
+        if btn != None:
+            btn.set_focus()
+            btn.click()
+            return True
+        return False
+        
+    ##########################################################################
+    def new_thread(self):
+        #self.bezi_new_thread_button.set_focus()
+        #self.bezi_new_thread_button.click()
+
+        self.bezi_window.draw_outline()
+        self.bezi_window.type_keys("^T", set_foreground=False)
+
+        # Confirmation dialog.
+        self.close_dialog("Keep all changes")
+
+        # Setup the thread for use.
+        self.setup_context()
+        
     ##########################################################################
     def run(self):
         self.config = self.load_config()
@@ -258,31 +298,8 @@ class BeziBridge:
         if not self.bezi_window or not self.bezi_prompt_window or not self.bezi_new_thread_button:
             return (False, "Could not find Bezi Window components")
 
-        # Is it the Bezi splash screen?
-        all_edits = self.bezi_window.descendants(control_type="Edit")
-        
-        if all_edits != None:
-            self.bezi_new_thread_button.set_focus()
-            self.bezi_new_thread_button.click()
-            
-            # Wait to see if confirmation dialog appears.
-            time.sleep(5)
-            
-            # Find the dialog button.
-            # TODO: localize
-            btn = self.find_button("Keep all changes")
-            if btn != None:
-                btn.click()
-                time.sleep(5)
-                
-            # Setup the thread for use.
-            self.setup_context()
-            
-            # Give Bezi time to create the thread.
-            time.sleep(2)
-            
         # Sync with existing chat history
-        print("Syncing with Bezi history...", end="", flush=True, file=sys.stderr)
+        print("\nSyncing with Bezi history...", end="", flush=True, file=sys.stderr)
         elements = self.bezi_window.descendants(control_type="Text")
         full_text = [e.window_text().strip() for e in elements]
         
@@ -306,28 +323,21 @@ class BeziBridge:
             return (True, "Initialization Complete")
 
         # Create a new thread.
-        self.bezi_new_thread_button.set_focus()
-        self.bezi_new_thread_button.click()
-        
-        # Wait to see if confirmation dialog appears.
-        time.sleep(5)
-        
-        # Find the dialog button.
-        # TODO: localize issue
-        btn = self.find_button("Keep all changes")
-        if btn != None:
-            btn.click()
-            time.sleep(5)
-            
-        # Setup the thread for use.
-        self.setup_context()
+        self.new_thread()
         
         # Send the prompt.
-        result = self.send_prompt(self.bezi_prompt)
-        if result:
-            return (True, result)
+        if self.args.init == False:
+            result = self.send_prompt(self.bezi_prompt)
+            if result:
+                # "20 tool call limit"
+                # TODO: localize
+                self.close_dialog("Continue")
+                    
+                return (True, result)
+            else:
+                return (False, "Timeout or empty Response sending prompt to Bezi.")
         else:
-            return (False, "Timeout or empty Response sending prompt to Bezi.")
+            return (True, "No Error.")
 
 ##############################################################################
 if __name__ == "__main__":
