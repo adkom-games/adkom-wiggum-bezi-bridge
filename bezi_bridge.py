@@ -29,11 +29,13 @@ class BeziBridge:
     def find_windows(self):
         # 1. Find or Launch bezi_window
         try:
-            app = Application(backend="uia").connect(title="Bezi", class_name="Tauri Window", timeout=5)
+            app = Application(backend="uia")
             if app == None:
                 print("Can't connect to Bezi.", file=sys.stderr)
                 exit(1)
-                
+            app.connect(title="Bezi", class_name="Tauri Window")
+            time.sleep(5)
+            
             self.bezi_window = app.window(title="Bezi", class_name="Tauri Window")
             if self.bezi_window == None:
                 print("Can't find Bezi window.", file=sys.stderr)
@@ -53,7 +55,7 @@ class BeziBridge:
                 print("Can't find created Bezi window.", file=sys.stderr)
                 exit(1)
 
-            self.bezi_window.wait("ready", timeout=60)
+            self.bezi_window.wait("visible", timeout=60)
 
         # 2. Find ALL Edit windows and pick the last one
         # Note: Tauri apps often put the active chat input as the last edit control in the tree.
@@ -62,10 +64,10 @@ class BeziBridge:
         if not all_edits:
             print(f"bezi_prompt_window not found", file=sys.stderr)
             return (None, None)
-            
+        
         # Select the last item in the list
         self.bezi_prompt_window = all_edits[-1]
-
+        
         # Find the New Thread button
         # TODO: localize issue
         btn = self.find_button("New Thread (Ctrl + T)")
@@ -73,7 +75,7 @@ class BeziBridge:
             print("Unable to find New Thread button.", file=sys.stderr)
             exit(1)
         self.bezi_new_thread_button = btn
-            
+        
     ##########################################################################
     def find_button(self, name):
         all_buttons = self.bezi_window.descendants(control_type="Button")
@@ -113,7 +115,6 @@ class BeziBridge:
 
         self.bezi_path = self.args.bezi_path or self.config.get("bezi_path")
 
-        # NEW: Check if the prompt argument is a file path
         if self.args.prompt and os.path.exists(self.args.prompt):
             print("Reading from file", file=sys.stderr);
             with open(self.args.prompt, 'r', encoding='utf-8') as f:
@@ -180,12 +181,11 @@ class BeziBridge:
             raise ValueError("Empty prompt")
             return
         
-        # Window to front.
-        self.bezi_window.set_focus()
-        #self.bezi_window.wait("ready", timeout=60)
-        
         # --- Send Loop ---
         while True:
+            self.find_windows()
+            self.bezi_window.set_focus()
+            
             pending_prompt = message
             
             key_retries_max = 3
@@ -197,9 +197,10 @@ class BeziBridge:
                 # Send the prompt
                 try:
                     print(f"Sending prompt: {pending_prompt}")
-                    self.bezi_prompt_window.draw_outline()
                     self.bezi_prompt_window.set_text(pending_prompt)
+                    time.sleep(1)
                     self.bezi_prompt_window.type_keys("{ENTER}")
+                    time.sleep(1)
                 except Exception as e:
                     print(f"\nError sending keys, RETRYING ({key_retry} of {key_retries_max}). Exception: \"{e}\"", file=sys.stderr)
                 else:
@@ -210,6 +211,10 @@ class BeziBridge:
             start_time = time.time()
             found_data = None
 
+            # "20 tool call limit"
+            # TODO: localize
+            self.close_dialog("Continue")
+            
             # Polling Loop
             while (time.time() - start_time) < self.prompt_timeout_length:
                 time.sleep(1)
@@ -239,7 +244,12 @@ class BeziBridge:
                         except ValueError:
                             continue
                 
-                if found_data: break
+                # "20 tool call limit"
+                # TODO: localize
+                self.close_dialog("Continue")
+
+                if found_data:
+                    break
 
             # Post-Process Polling Result
             if found_data:
