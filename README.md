@@ -1,4 +1,4 @@
-# Bezi Python Bridge
+# ADKOM Wiggum-Bezi Python Bridge
 
 Ralph Wiggum comes to Bezi!
 
@@ -20,13 +20,8 @@ This is an automated bridge for interacting with the **Bezi** desktop applicatio
 
 ## Installation & Setup (Unity)
 
-The Bezi Bridge is a Unity Package (UPM).
-
-1.  Open your Unity Project.
-2.  Navigate to **Window > Package Manager**.
-3.  Click the **[+]** icon in the top-left corner and select **Add package from git URL...**.
-4.  Enter the following URL:
-    `https://github.com/adkom-games/bezi-bridge.git`
+1. Clone the repo into /Assets/BeziBridge.
+2. The specification for what game to build is in /Assets/BeziBridge/specs, the default spec describes a Roll-A-Ball type game.
 
 ## Usage
 
