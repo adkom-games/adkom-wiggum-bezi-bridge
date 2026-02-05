@@ -2,7 +2,7 @@
 
 Ralph Wiggum comes to Bezi!
 
-This is an automated bridge for interacting with the **Bezi** desktop application using Python and PowerShell, implementing the [Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum) loop for **Bezi**. This tool handles automated prompting, thread management, and synchronization with Bezi's AI history via `pywinauto`.
+This is an automated bridge for interacting with the **[Bezi](https://www.bezi.com)** desktop application using Python and PowerShell, implementing the [Ralph Wiggum](https://github.com/ghuntley/how-to-ralph-wiggum) loop for **Bezi**. This tool handles automated prompting, thread management, and synchronization with Bezi's AI history via `pywinauto`.
 
 ## Features
 
