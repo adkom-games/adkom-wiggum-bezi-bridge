@@ -1,11 +1,13 @@
 param (
     [string]$Arg1,
-    [string]$Arg2
+    [string]$Arg2,
+    [switch]$d  # Debug flag
 )
 
 $TotalStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $IterationTimings = @()
 $LogFile = "bezi_performance.csv"
+$DebugFlag = if ($d) { "-d" } else { "" }
 
 # --- SELF-HEALING VENV LOGIC ---
 $VenvPath = "$PSScriptRoot\.venv"
@@ -18,24 +20,28 @@ if (-not (Test-Path $VenvPath)) {
     & "$VenvPath\Scripts\Activate.ps1"
 }
 
-# Parse arguments
-if ($Arg1 -eq "plan") {
-    $Mode = "plan"; $PromptFile = "PROMPT_plan.md"
-    $MaxIterations = if ($Arg2 -match '^\d+$') { [int]$Arg2 } else { 0 }
-}
-elseif ($Arg1 -match '^\d+$') {
-    $Mode = "build"; $PromptFile = "PROMPT_build.md"
-    $MaxIterations = [int]$Arg1
-}
-else {
-    $Mode = "build"; $PromptFile = "PROMPT_build.md"; $MaxIterations = 0
+# --- IMPROVED ARGUMENT PARSING ---
+$Mode = "build"
+$PromptFile = "PROMPT_build.md"
+$MaxIterations = 0
+
+$ArgsList = @($Arg1, $Arg2)
+
+foreach ($a in $ArgsList) {
+    if ($a -eq "plan") {
+        $Mode = "plan"
+        $PromptFile = "PROMPT_plan.md"
+    } elseif ($a -match '^\d+$') {
+        $MaxIterations = [int]$a
+    }
 }
 
 $CurrentBranch = git branch --show-current
 
-# Simplified Visual Box (Standard ASCII)
+# Visual Status Box
 Write-Host "------------------------------------------------" -ForegroundColor Cyan
 Write-Host "| MODE:   $($Mode.PadRight(36)) |" -ForegroundColor Cyan
+Write-Host "| DEBUG:  $($d.ToString().PadRight(36)) |" -ForegroundColor Cyan
 Write-Host "| PROMPT: $($PromptFile.PadRight(36)) |" -ForegroundColor Cyan
 Write-Host "| BRANCH: $($CurrentBranch.PadRight(36)) |" -ForegroundColor Cyan
 Write-Host "| ITER:   $($MaxIterations.ToString().PadRight(36)) |" -ForegroundColor Cyan 
@@ -43,8 +49,9 @@ Write-Host "------------------------------------------------" -ForegroundColor C
 
 if (-not (Test-Path $PromptFile)) { Write-Error "Error: $PromptFile not found"; exit 1 }
 
-# Init the Bezi Bridge
-Start-Process -FilePath "py" -ArgumentList "bezi_bridge.py", "--init" -NoNewWindow -Wait
+# Init the Bezi Bridge with proper ArgumentList array
+$InitArgs = if ($d) { @("bezi_bridge.py", "--init", "-d") } else { @("bezi_bridge.py", "--init") }
+Start-Process -FilePath "py" -ArgumentList $InitArgs -NoNewWindow -Wait
 
 $Iteration = 0
 $TempPromptPath = Join-Path $env:TEMP "bezi_prompt_tmp.md"
@@ -54,13 +61,22 @@ try {
         if ($MaxIterations -gt 0 -and $Iteration -ge $MaxIterations) { break }
 
         $LoopTimer = [System.Diagnostics.Stopwatch]::StartNew()
-        $ThreadName = "$Mode $Iteration"
         
-        # Pass the prompt via file to avoid shell escaping issues
+        # Pass the prompt via file
         Get-Content -Path $PromptFile -Raw | Out-File -FilePath $TempPromptPath -Encoding utf8
         
-        # Run bridge
-        Start-Process -FilePath "py" -ArgumentList "bezi_bridge.py -t `"$ThreadName`" `"$TempPromptPath`"" -NoNewWindow -Wait
+        # Build Bridge Arguments as an array to fix malformed string errors
+        $BridgeArgs = @("bezi_bridge.py", $TempPromptPath)
+        if ($d) { $BridgeArgs += "-d" }
+        
+        # Execute Bridge
+        Start-Process -FilePath "py" -ArgumentList $BridgeArgs -NoNewWindow -Wait
+        
+        # Check if the bridge succeeded before continuing loop
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Bridge failed with exit code $LASTEXITCODE. Stopping loop." -ForegroundColor Red
+            break
+        }
         
         $LoopTimer.Stop()
         $Iteration++
@@ -80,7 +96,7 @@ finally {
     $TotalStopwatch.Stop()
     $TotalMin = [Math]::Round($TotalStopwatch.Elapsed.TotalMinutes, 2)
     
-    # Final Timing Report (Standard ASCII)
+    # Final Timing Report
     Write-Host "`n----------------- EXECUTION REPORT ----------------" -ForegroundColor Yellow
     foreach ($entry in $IterationTimings) {
         $Label = "Loop $($entry.Iteration)"
@@ -90,12 +106,10 @@ finally {
     Write-Host "| TOTAL TIME : $($TotalMin.ToString().PadRight(31)) min |" -ForegroundColor Yellow
     Write-Host "-------------------------------------------------" -ForegroundColor Yellow
 
-    # Log to CSV
     if ($IterationTimings.Count -gt 0) {
         $IterationTimings | Export-Csv -Path $LogFile -NoTypeInformation -Append
-        Write-Host "Performance data logged to $LogFile" -ForegroundColor Gray
     }
 
     if (Test-Path $TempPromptPath) { Remove-Item $TempPromptPath }
-    if (Get-Command deactivate -ErrorAction SilentlyContinue) { deactivate }
+    Write-Host "Execution Finished." -ForegroundColor Yellow
 }
